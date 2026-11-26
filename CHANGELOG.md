@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- A folder that is still fetching its remaining pages says **Loading…** instead of **Refreshing…**; only the page's Refresh button refreshes.
+
+
 ## 1.1.0
 
 - The Files explorer now fills the window instead of stopping halfway, and the file preview scrolls inside the page rather than growing past it.

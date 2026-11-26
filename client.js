@@ -507,7 +507,8 @@ window.__ModuleLoader__.load({
         }, children,
         node.error || node.busy || !node.pages || node.next || node.limited || !node.entries.length
           ? h('li', { className: 'oracle-dsh-tree-status' },
-            feedback(t, node, !!node.pages),
+            // Appending another page is loading, not refreshing.
+            feedback(t, node, false),
             !node.busy && !node.error && node.pages > 0 && !node.entries.length && h('span', { className: 'oracle-dsh-muted' }, t('empty')),
             !node.busy && (node.error || !node.pages) && button(t(node.error ? 'retry' : 'loadFolder'),
               event => requestPage(node.next, event.currentTarget), { 'aria-label': node.error ? t('retryFolder', { folder: name }) : undefined }),
