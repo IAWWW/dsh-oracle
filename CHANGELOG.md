@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- The file explorer now lists hidden entries (`.config`, `.local`, `.ssh`, …), dimmed like an editor's explorer. The credential-name filter still applies inside them: `id_*`, `known_hosts`, `.env`, `*.pem` and similar stay invisible, and a scope whose path contains one of those names is still refused.
+
+
 ## 1.0.0 — first public release
 
 - **Oracle** sidebar page: on-demand SSH snapshot with CPU usage, load average, memory and disk charts, colored by pressure and refreshed only when asked.

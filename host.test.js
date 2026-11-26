@@ -93,7 +93,7 @@ test('invalid or non-Files roots are rejected without starting SSH', async () =>
   let opened = false;
   const f = fixture({async overview() { opened = true; }}, () => { opened = true; });
   try {
-    for (const root of ['etc', '/var/../etc', '/proc', '/home/ubuntu/.ssh']) {
+    for (const root of ['etc', '/var/../etc', '/proc', '/home/ubuntu/.env', '/home/ubuntu/keys.pem']) {
       const result = await f.request({url: `/_oracle-dsh/read?snapshot=list&root=${encodeURIComponent(root)}`});
       assert.equal(result.status, 400, root);
     }

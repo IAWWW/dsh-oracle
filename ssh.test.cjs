@@ -79,7 +79,7 @@ test('supports cursor pagination with scope-relative validated paths', async () 
 });
 
 test('canonicalizes explicit absolute roots without widening HOME or allowing traversal', async () => {
-  for (const [input, canonical] of [['/', '/'], ['/home/ubuntu/', '/home/ubuntu'], ['/var/www//', '/var/www'], ['/srv/Proc photos', '/srv/Proc photos']]) {
+  for (const [input, canonical] of [['/', '/'], ['/home/ubuntu/', '/home/ubuntu'], ['/var/www//', '/var/www'], ['/srv/Proc photos', '/srv/Proc photos'], ['/.hidden/path', '/.hidden/path'], ['/home/ubuntu/.config//', '/home/ubuntu/.config']]) {
     assert.equal(normalizeBrowseRoot(input), canonical);
     const { adapter } = fakeSsh(({ request, callback }) => {
       assert.equal(request.root, canonical);
@@ -87,7 +87,7 @@ test('canonicalizes explicit absolute roots without widening HOME or allowing tr
     }, { root: input });
     await adapter.list();
   }
-  for (const root of ['../../home', '//srv/oracle', '//', '/.hidden/path', '/srv//oracle', '/var/../www', '/srv/./x', '/srv/api-secret', '/srv/foo.pem', '/proc', '/sys/class', '/DEV/shm', '/run/user', '/var/run', '/var/lib/cloud', '/var/lib/kubelet/pods', '/etc', '/root', '/tmp/foo', '/var/tmp', '/srv/a\nb', null, undefined]) {
+  for (const root of ['../../home', '//srv/oracle', '//', '/srv//oracle', '/var/../www', '/srv/./x', '/srv/api-secret', '/srv/foo.pem', '/proc', '/sys/class', '/DEV/shm', '/run/user', '/var/run', '/var/lib/cloud', '/var/lib/kubelet/pods', '/etc', '/root', '/tmp/foo', '/var/tmp', '/srv/a\nb', null, undefined]) {
     assert.throws(() => normalizeBrowseRoot(root), /Scope root/);
     if (root !== undefined) assert.throws(() => createOracleSsh({ root }), /Scope root/);
   }
@@ -166,6 +166,24 @@ test('reports CPU usage tolerantly: unavailable sample, exact bounds, saturated 
   }
 });
 
+test('hidden entries are listed like any other, while structural and secret names are not', async () => {
+  const dotfile = (name) => ({ name, type: 'file', sizeBytes: 3, modifiedAt: '2025-12-03T00:00:00.000Z' });
+  const { adapter } = fakeSsh(({ callback }) => callback(null, success({
+    entries: [dotfile('.bashrc'), dotfile('.profile'), { ...dotfile('.config'), type: 'directory', sizeBytes: null }],
+    after: null,
+  })));
+  const listed = await adapter.list();
+  assert.deepEqual(listed.entries.map(entry => entry.name), ['.bashrc', '.profile', '.config']);
+  for (const name of ['.', '..', '']) {
+    const bad = fakeSsh(({ callback }) => callback(null, success({ entries: [dotfile(name)], after: null })));
+    await assert.rejects(bad.adapter.list(), { code: 'ORACLE_PROTOCOL' });
+  }
+  // Credential-shaped names stay refused as scopes even now dotfiles show.
+  for (const root of ['/home/ubuntu/.env', '/srv/.netrc', '/srv/id_rsa', '/srv/keys.pem']) {
+    assert.throws(() => normalizeBrowseRoot(root), /disallowed/, root);
+  }
+});
+
 test('bounds and sanitizes the returned fields for preview and list', async () => {
   const { adapter } = fakeSsh(({ request, callback }) => {
     assert.equal(request.op, 'preview');
@@ -213,7 +231,7 @@ mounts = {
     b'4': (b'8:1', b'ext4', '/var/lib/cloud', '/srv/public'),
     b'5': (b'8:1', b'ext4', '/var/lib', '/srv/lib'),
     b'6': (b'0:8', b'tmpfs', '/', '/srv/volatile'),
-    b'7': (b'8:1', b'ext4', '/home/user/.hidden', '/srv/hidden'),
+    b'7': (b'8:1', b'ext4', '/home/user/documents', '/srv/documents'),
     b'8': (b'8:1', b'ext4', '/root', '/srv/bind'),
     b'9': (b'8:3', b'ext4', '/', '/var/lib/docker'),
     b'10': (b'8:3', b'ext4', '/overlay', '/srv/engine'),
@@ -228,7 +246,8 @@ assert not listing_allowed({'/'}, 'proc')
 assert not listing_allowed({'/var'}, 'run')
 assert not listing_allowed(explicit_origins(b'5', '/srv/lib', mounts), 'cloud')
 assert listing_allowed({'/'}, 'home')
-for ident, visible in [(3, '/srv/statistics'), (4, '/srv/public'), (6, '/srv/volatile'), (7, '/srv/hidden'), (8, '/srv/bind'), (10, '/srv/engine'), (11, '/srv/settings'), (12, '/srv/nodes'), (20, '/srv/unseen')]:
+assert '/srv/documents' in explicit_origins(b'7', '/srv/documents', mounts)
+for ident, visible in [(3, '/srv/statistics'), (4, '/srv/public'), (6, '/srv/volatile'), (8, '/srv/bind'), (10, '/srv/engine'), (11, '/srv/settings'), (12, '/srv/nodes'), (20, '/srv/unseen')]:
     try:
         explicit_origins(str(ident).encode(), visible, mounts)
     except Refusal:

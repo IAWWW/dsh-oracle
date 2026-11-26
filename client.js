@@ -139,6 +139,7 @@ window.__ModuleLoader__.load({
         border:1px solid transparent; border-radius:5px; background:transparent; color:inherit; font:inherit; text-align:start; cursor:pointer; }
       .oracle-dsh-tree-row:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:-2px; }
       .oracle-dsh-tree-row[aria-pressed='true'] { background:var(--dsw-alias-card-fill-hover); border-color:var(--dsw-alias-border-l2); font-weight:600; }
+      .oracle-dsh-tree-row[data-hidden='true'] .oracle-dsh-tree-name { opacity:.72; }
       .oracle-dsh-tree-name { min-width:0; overflow-wrap:anywhere; white-space:pre-wrap; }
       .oracle-dsh-tree-glyph { display:inline-flex; flex:none; align-items:center; gap:3px; }
       .oracle-dsh-tree-chevron { inline-size:10px; }
@@ -475,7 +476,9 @@ window.__ModuleLoader__.load({
           if (entry.type === 'directory') return folderRow(child, entry.name, depth + 1);
           return h('li', { key: child }, button(h(Fragment, null,
             h(TreeGlyph, { directory: false }), h('bdi', { className: 'oracle-dsh-tree-name' }, entry.name)),
-          event => select(child, entry, event.currentTarget), { className: 'oracle-dsh-tree-row', 'aria-pressed': selected?.path === child }));
+          event => select(child, entry, event.currentTarget), {
+            className: 'oracle-dsh-tree-row', 'aria-pressed': selected?.path === child, 'data-hidden': entry.name.startsWith('.'),
+          }));
         });
         const rowId = `${headings}-folder-${encodeURIComponent(path)}`;
         function requestPage(cursor, buttonElement) {

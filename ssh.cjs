@@ -66,7 +66,8 @@ def denied():
     raise Refusal('unavailable')
 
 def name_ok(name):
-    return (name != '' and not name.startswith('.') and '/' not in name and '\\' not in name
+    # Hidden entries are legitimate; only the two structural names are not.
+    return (name not in ('', '.', '..') and '/' not in name and '\\' not in name
             and len(os.fsencode(name)) <= 255 and not SENSITIVE.search(name)
             and not any(unicodedata.category(c) in UNSAFE for c in name))
 
@@ -369,7 +370,7 @@ print(json.dumps(response, ensure_ascii=True, allow_nan=False, separators=(',', 
 
 const CONTROL = /[\p{Cc}\p{Cf}\p{Cs}]/u;
 const SAFE_NAME = (name) => typeof name === 'string' && name.length > 0 &&
-  !name.startsWith('.') && !name.includes('/') && !name.includes('\\') &&
+  name !== '.' && name !== '..' && !name.includes('/') && !name.includes('\\') &&
   !CONTROL.test(name) && Buffer.byteLength(name) <= 255;
 
 function isBlockedRoot(path) {
@@ -395,9 +396,14 @@ function checkedPath(value, browseRoot = null) {
     throw new Error('Expected a scope-relative path.');
   }
   const names = value.split('/');
-  if (names.length > 64 || !names.every(SAFE_NAME)) throw new Error('Path contains a disallowed component.');
-  if (browseRoot !== null && (names.some(name => SENSITIVE_NAME.test(name)) ||
-      isBlockedRoot(`${browseRoot === '/' ? '' : browseRoot}/${value}`))) throw failure('ORACLE_UNAVAILABLE', 'The remote scope or item is unavailable or disallowed.');
+  // Credential-shaped components stay out of reach in every scope, not just
+  // when browsing an explicitly chosen directory.
+  if (names.length > 64 || !names.every(SAFE_NAME) || names.some(name => SENSITIVE_NAME.test(name))) {
+    throw new Error('Path contains a disallowed component.');
+  }
+  if (browseRoot !== null && isBlockedRoot(`${browseRoot === '/' ? '' : browseRoot}/${value}`)) {
+    throw failure('ORACLE_UNAVAILABLE', 'The remote scope or item is unavailable or disallowed.');
+  }
   return value;
 }
 
