@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- The Files explorer now fills the window instead of stopping halfway, and the file preview scrolls inside the page rather than growing past it.
+- Folders load themselves: no **Load more** button. An open folder keeps fetching until it is complete (up to 1,000 entries), with 100 entries per request instead of 50.
+
+
 ## 1.0.1
 
 - The file explorer now lists hidden entries (`.config`, `.local`, `.ssh`, …), dimmed like an editor's explorer. The credential-name filter still applies inside them: `id_*`, `known_hosts`, `.env`, `*.pem` and similar stay invisible, and a scope whose path contains one of those names is still refused.

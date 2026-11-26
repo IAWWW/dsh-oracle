@@ -16,6 +16,8 @@ window.__ModuleLoader__.load({
     const MAX_FOLDER_ENTRIES = 1000;
     const MAX_FOLDER_PAGES = 20;
     const MAX_LIST_REQUESTS = 3;
+    /** Server-enforced page ceiling; fewer requests per folder. */
+    const LIST_LIMIT = 100;
 
     const en = {
       title: 'Oracle', description: 'View the Oracle server status, browse its shared files, or open a chat.',
@@ -36,7 +38,7 @@ window.__ModuleLoader__.load({
       readError: 'Oracle could not complete the request.',
       rootPath: 'Remote folder path', openFolder: 'Open folder', homeFolder: 'Home',
       rootHelp: 'Enter an absolute path on Oracle, for example /var/www. SSH permissions apply; hidden and sensitive items are filtered out.',
-      loadFolder: 'Load folder', moreIn: 'Load more from {folder}', retryFolder: 'Try loading {folder} again',
+      loadFolder: 'Load folder', retryFolder: 'Try loading {folder} again',
       previewHelp: 'Previews are available for supported text files.',
       rootInvalid: 'Enter an absolute directory path without . or .. components.',
       explorer: 'Explorer', resetTree: 'Refresh tree', empty: 'No visible files or folders.',
@@ -67,7 +69,7 @@ window.__ModuleLoader__.load({
       badReply: 'Oracle 返回的响应无效或过大。', readError: 'Oracle 未能完成请求。',
       rootPath: '远程文件夹路径', openFolder: '打开文件夹', homeFolder: '主目录',
       rootHelp: '请输入 Oracle 上的绝对路径，例如 /var/www。受 SSH 权限限制，并会过滤隐藏或敏感项目。',
-      loadFolder: '加载文件夹', moreIn: '从 {folder} 加载更多', retryFolder: '重新加载 {folder}',
+      loadFolder: '加载文件夹', retryFolder: '重新加载 {folder}',
       previewHelp: '仅支持预览指定格式的文本文件。',
       rootInvalid: '请输入不含 . 或 .. 的绝对文件夹路径。',
       explorer: '文件资源管理器', resetTree: '刷新目录树', empty: '没有可见的文件或文件夹。',
@@ -107,6 +109,7 @@ window.__ModuleLoader__.load({
       .oracle-dsh-scroll { overflow:auto; padding-block-end:4px; }
       /* The embedded Conversation fills a definite-height box and scrolls itself. */
       .oracle-dsh-pane-chat { overflow:hidden; }
+      .oracle-dsh-pane-files { overflow:hidden; }
       .oracle-dsh-chat-bar { flex:none; display:flex; align-items:center; justify-content:flex-end; gap:8px; }
       /* Mirrors the shipped embedded-chat wrapper: the Conversation shell expects
          a definite-height flex parent and owns its own scrolling. */
@@ -130,9 +133,10 @@ window.__ModuleLoader__.load({
       .oracle-dsh-root-input { flex:1 1 170px; min-width:0; padding:6px 8px; font:inherit; color:inherit;
         border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-alias-card-fill); }
       .oracle-dsh-root-input:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:2px; }
-      .oracle-dsh-explore { display:grid; align-items:stretch; gap:10px; grid-template-columns:minmax(185px, .65fr) minmax(0, 1.35fr); }
-      .oracle-dsh-explore > section { display:flex; flex-direction:column; gap:8px; min-width:0; }
-      .oracle-dsh-folder-scroll { overflow:auto; max-height:50vh; padding:2px 4px; }
+      .oracle-dsh-explore { display:grid; align-items:stretch; gap:10px; flex:1 1 auto; min-height:0;
+        grid-template-columns:minmax(185px, .65fr) minmax(0, 1.35fr); }
+      .oracle-dsh-explore > section { display:flex; flex-direction:column; gap:8px; min-width:0; min-height:0; }
+      .oracle-dsh-folder-scroll { overflow:auto; flex:1 1 auto; min-height:0; padding:2px 4px; }
       .oracle-dsh-branches { list-style:none; margin:0; padding-block:0; padding-inline:8px 0; border-inline-start:1px solid var(--dsw-alias-border-l2); }
       .oracle-dsh-deep-branch { padding-inline-start:2px; border-inline-start:0; }
       .oracle-dsh-tree-row { display:flex; align-items:center; gap:6px; width:100%; min-height:29px; padding:3px 4px; box-sizing:border-box;
@@ -146,7 +150,7 @@ window.__ModuleLoader__.load({
       .oracle-dsh-tree-glyph[data-kind='directory'] { color:var(--dsw-alias-state-business-primary); }
       .oracle-dsh-tree-glyph[data-kind='file'] { color:var(--dsw-alias-label-secondary); }
       .oracle-dsh-tree-status { padding:4px; }
-      .oracle-dsh-preview { max-height:48vh; overflow:auto; white-space:pre; tab-size:4; margin:0; padding:10px;
+      .oracle-dsh-preview { flex:1 1 auto; min-height:0; overflow:auto; white-space:pre; tab-size:4; margin:0; padding:10px;
         border:1px solid var(--dsw-alias-border-l2); border-radius:8px; }
       @media (hover:hover) { .oracle-dsh-tree-row:hover { background:var(--dsw-alias-card-fill-hover); } }
       @container (max-width:520px) { .oracle-dsh-explore { grid-template-columns:minmax(0, 1fr); } .oracle-dsh-folder-scroll { max-height:32vh; } }
@@ -367,7 +371,7 @@ window.__ModuleLoader__.load({
     }
 
     const initialFolder = { entries: [], next: null, seen: [], pages: 0, busy: false, error: null, limited: false };
-    function useFolders(root, active) {
+    function useFolders(root, active, isExpanded) {
       const [folders, setFolders] = useState(() => new Map());
       const controllers = useRef(new Map());
       const abortAll = useCallback(() => {
@@ -400,9 +404,10 @@ window.__ModuleLoader__.load({
         const request = new AbortController();
         controllers.current.set(path, request);
         update(path, node => ({ ...node, busy: true, error: null }));
-        void readSnapshot('list', { root, path, cursor }, request.signal).then(value => {
+        void readSnapshot('list', { root, path, cursor, limit: String(LIST_LIMIT) }, request.signal).then(value => {
           if (controllers.current.get(path) !== request || request.signal.aborted) return;
           controllers.current.delete(path);
+          let follow;
           update(path, node => {
             const combined = new Map((cursor ? node.entries : []).map(entry => [entry.name, entry]));
             for (const entry of value.entries.slice(0, MAX_FOLDER_ENTRIES)) {
@@ -413,9 +418,13 @@ window.__ModuleLoader__.load({
             const pages = cursor ? node.pages + 1 : 1;
             const next = typeof value.nextCursor === 'string' && value.nextCursor.length <= 8192 && value.nextCursor.length > 0
               && !seen.includes(value.nextCursor) ? value.nextCursor : null;
-            const limited = combined.size > MAX_FOLDER_ENTRIES || (!!next && (pages >= MAX_FOLDER_PAGES || entries.length >= MAX_FOLDER_ENTRIES));
+            const limited = combined.size > MAX_FOLDER_ENTRIES
+              || (!!next && (pages >= MAX_FOLDER_PAGES || entries.length >= MAX_FOLDER_ENTRIES));
+            follow = limited || next === null ? null : next;
             return { entries, next: limited ? null : next, seen, pages, busy: false, error: null, limited };
           });
+          // An open folder fills itself to the page ceiling; nothing to click.
+          if (follow !== null && isExpanded(path)) queueMicrotask(() => load(path, follow));
         }, error => {
           if (controllers.current.get(path) !== request || request.signal.aborted) return;
           controllers.current.delete(path);
@@ -427,8 +436,9 @@ window.__ModuleLoader__.load({
 
     const ROOT_PATH = '.';
     function FileWorkspace({ t, locale, active, root }) {
-      const { folders, load } = useFolders(root, active);
       const [expansion, setExpansion] = useState(() => new Map([[ROOT_PATH, true]]));
+      const openFolders = useRef(expansion);
+      const { folders, load } = useFolders(root, active, path => openFolders.current.get(path) === true);
       const [selected, setSelected] = useState(null);
       const [atFolderLimit, setAtFolderLimit] = useState(false);
       const preview = useRead('preview');
@@ -453,7 +463,11 @@ window.__ModuleLoader__.load({
       function toggle(path) {
         const expanded = !expansion.get(path);
         if (!expansion.has(path) && expansion.size >= MAX_FOLDERS) { setAtFolderLimit(true); return; }
-        setExpansion(known => new Map(known).set(path, expanded));
+        setExpansion(known => {
+          const next = new Map(known).set(path, expanded);
+          openFolders.current = next;
+          return next;
+        });
         const folder = folders.get(path);
         if (expanded && !folder?.pages && !folder?.busy) load(path);
       }
@@ -497,8 +511,6 @@ window.__ModuleLoader__.load({
             !node.busy && !node.error && node.pages > 0 && !node.entries.length && h('span', { className: 'oracle-dsh-muted' }, t('empty')),
             !node.busy && (node.error || !node.pages) && button(t(node.error ? 'retry' : 'loadFolder'),
               event => requestPage(node.next, event.currentTarget), { 'aria-label': node.error ? t('retryFolder', { folder: name }) : undefined }),
-            !node.error && node.next && button(t('more'), event => requestPage(node.next, event.currentTarget),
-              { disabled: node.busy, 'aria-label': t('moreIn', { folder: name }) }),
             node.limited && h('p', { className: 'oracle-dsh-muted' }, t('pageLimit', { count: node.entries.length }))) : null));
       }
       const absoluteFile = selected ? `${root === '/' ? '' : root}/${selected.path}` : '';
@@ -704,7 +716,7 @@ window.__ModuleLoader__.load({
           tabs.map(key => h('div', {
             key, role: 'tabpanel', id: `${domId}-pane-${key}`, 'aria-labelledby': `${domId}-tab-${key}`,
             hidden: key !== tab,
-            className: `oracle-dsh-pane ${key === 'chat' ? 'oracle-dsh-pane-chat' : 'oracle-dsh-scroll'}`,
+            className: `oracle-dsh-pane ${key === 'chat' ? 'oracle-dsh-pane-chat' : key === 'files' ? 'oracle-dsh-pane-files' : 'oracle-dsh-scroll'}`,
           }, key === 'overview' ? h(Overview, { t, locale, active: tab === key })
             : key === 'files' ? h(Files, { t, locale, active: tab === key })
             : chatVisited ? h(renderChat, { ...props, active: tab === key }) : null))));

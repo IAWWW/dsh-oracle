@@ -27,7 +27,7 @@ export function setupOracle(ctx, ssh = sshModule.createOracleSsh(), openBrowse =
 
   // Alternate roots are accepted only by the authenticated Files route. The
   // chat-facing executor never passes a selected root into this dispatcher.
-  const dispatch = async (snapshot, {path, cursor, signal, root} = {}) => {
+  const dispatch = async (snapshot, {path, cursor, limit, signal, root} = {}) => {
     if (!allowed.has(snapshot)) throw new Error('Unknown Oracle operation.');
     if (inFlight >= 4) throw new Error('Oracle is busy. Try again in a moment.');
     signal = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
@@ -36,7 +36,11 @@ export function setupOracle(ctx, ssh = sshModule.createOracleSsh(), openBrowse =
     try {
       if (snapshot === 'overview') return await ssh.overview({signal});
       const backend = root === undefined ? ssh : openBrowse(root);
-      if (snapshot === 'list') return await backend.list({path: path ?? '.', cursor: cursor ?? null, signal});
+      if (snapshot === 'list') {
+        const page = limit === undefined || limit === null ? 50 : Number(limit);
+        if (!Number.isInteger(page) || page < 1 || page > 100) throw new Error('Page size must be 1 to 100.');
+        return await backend.list({path: path ?? '.', cursor: cursor ?? null, limit: page, signal});
+      }
       return await backend.preview({path, signal});
     } finally {
       inFlight--;
@@ -67,7 +71,7 @@ export function setupOracle(ctx, ssh = sshModule.createOracleSsh(), openBrowse =
       const abort = () => controller.abort();
       res.once('close', abort);
       try {
-        const value = await dispatch(snapshot, {path: params.get('path'), cursor: params.get('cursor'), signal: controller.signal, root});
+        const value = await dispatch(snapshot, {path: params.get('path'), cursor: params.get('cursor'), limit: params.get('limit'), signal: controller.signal, root});
         if (!controller.signal.aborted) send(res, 200, {ok: true, value: root === undefined ? value : {...value, browseRoot: root}});
       } catch (error) {
         if (!controller.signal.aborted) send(res, 502, {ok: false, error: error instanceof Error ? error.message : 'Oracle request failed.'});
