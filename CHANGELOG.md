@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2
+
+- Nothing is printed while a folder appends its remaining pages; the list filling in is the progress. An empty folder still says **Loading…** once.
+
+
 ## 1.1.1
 
 - A folder that is still fetching its remaining pages says **Loading…** instead of **Refreshing…**; only the page's Refresh button refreshes.
